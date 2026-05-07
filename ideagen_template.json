@@ -1,0 +1,687 @@
+{
+  "name": "IdeaGen — YouTube AI Ideas to Notion",
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "versionId": "c3d4e5f6-a7b8-9012-cdef-345678901234",
+  "active": false,
+  "tags": [
+    {
+      "id": "tag-01",
+      "name": "youtube"
+    },
+    {
+      "id": "tag-02",
+      "name": "automation"
+    },
+    {
+      "id": "tag-03",
+      "name": "AI"
+    }
+  ],
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "nodes": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440001",
+      "name": "Запуск по расписанию",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        200,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "daysInterval": 2
+            }
+          ]
+        }
+      },
+      "notes": "Пн 08:00. Ежедневно: 0 8 * * *"
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440002",
+      "name": "API Keys and Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        440,
+        300
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cfg-01",
+              "name": "YOUTUBE_API_KEY",
+              "value": "YOUR_YOUTUBE_API_KEY",
+              "type": "string"
+            },
+            {
+              "id": "cfg-03",
+              "name": "OPENAI_API_KEY",
+              "value": "YOUR_OPENAI_API_KEY",
+              "type": "string"
+            },
+            {
+              "id": "cfg-04",
+              "name": "TRANSCRIPT_LANG",
+              "value": "ru",
+              "type": "string"
+            },
+            {
+              "id": "cfg-05",
+              "name": "TELEGRAM_CHAT_ID",
+              "value": "YOUR_TELEGRAM_CHAT_ID",
+              "type": "string"
+            },
+            {
+              "id": "cfg-06",
+              "name": "NOTION_API_KEY",
+              "value": "YOUR_NOTION_API_KEY",
+              "type": "string"
+            },
+            {
+              "id": "cfg-07",
+              "name": "NOTION_DATABASE_ID",
+              "value": "YOUR_NOTION_DATABASE_ID",
+              "type": "string"
+            },
+            {
+              "id": "cfg-10",
+              "name": "MAX_VIDEOS",
+              "value": 10,
+              "type": "number"
+            },
+            {
+              "id": "cfg-11",
+              "name": "MIN_SCORE",
+              "value": 7,
+              "type": "number"
+            },
+            {
+              "id": "cfg-12",
+              "name": "CLAUDE_MODEL",
+              "value": "claude-haiku-4-5-20251001",
+              "type": "string"
+            },
+            {
+              "id": "cfg-13",
+              "name": "PUBLISHED_DAYS_AGO",
+              "value": 3,
+              "type": "number"
+            },
+            {
+              "id": "cfg-08",
+              "name": "CHANNELS",
+              "value": "[{\"id\": \"UCb8tBHdwq7qhWJ_U2htO6TQ\", \"name\": \"Genidea\"}, {\"id\": \"UCW6QeFhV3uUJi0fvjYdkqzg\", \"name\": \"VolchenkoAI\"}, {\"id\": \"UCRdFU98_6_SVmtSfhPaKDKw\", \"name\": \"Нейропросвещение\"}, {\"id\": \"UCmV3YpL4sGH8hn70fM3a3mA\", \"name\": \"Wes Roth\"}, {\"id\": \"UCHnyfMqiRRG1u-2MsSQLbXA\", \"name\": \"Veritasium\"}, {\"id\": \"UC-9-kyTW8ZkZNDHQJ6FgpwQ\", \"name\": \"Music Lab\"}, {\"id\": \"UCXv0aOgEqEPIHvDcHAqJlZQ\", \"name\": \"The AI Advantage\"}, {\"id\": \"UCbmNph6atAoGfqLoCL_duAg\", \"name\": \"Fireship\"}, {\"id\": \"UC8butISFwT-Wl7EV0hUK0BQ\", \"name\": \"freeCodeCamp\"}, {\"id\": \"UCnUYZLuoy1rq1aVMwx4aTzw\", \"name\": \"Greg Isenberg\"}, {\"id\": \"UCVhQ2NnY5Rskt6UjCUkJ_DA\", \"name\": \"AI Jason\"}, {\"id\": \"UCJXGnJSFMOkC2BgM9bKxSMw\", \"name\": \"Matt Wolfe\"}, {\"id\": \"UCNye-wNBqNL5ZzHSJj3l8Bg\", \"name\": \"Linus Tech Tips - AI\"}]",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "notes": "МЕНЯЙ ТОЛЬКО ЗДЕСЬ. Все ключи и настройки."
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440003",
+      "name": "Настроить канал",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const cfg = $('API Keys and Config').first().json;\n\n// Чтобы добавить канал — просто добавь строку в CHANNELS в ноде \"API Keys and Config\"\n// Формат: {\"id\": \"UCxxxxxxx\", \"name\": \"Название\"}\nvar channels;\ntry {\n  channels = JSON.parse(cfg.CHANNELS);\n} catch(e) {\n  throw new Error('CHANNELS must be valid JSON array. Error: ' + e.message);\n}\n\nif (!Array.isArray(channels) || channels.length === 0) {\n  throw new Error('CHANNELS array is empty. Add at least one channel.');\n}\n\nreturn channels\n  .filter(function(ch) { return ch.id && ch.id.trim() !== ''; })\n  .map(function(ch) { return { json: {\n    channel_id:         ch.id,\n    channel_name:       ch.name || ch.id,\n    youtube_api_key:    cfg.YOUTUBE_API_KEY,\n    openai_api_key:     cfg.OPENAI_API_KEY,\n    transcript_lang:    cfg.TRANSCRIPT_LANG || 'ru',\n    telegram_chat_id:   cfg.TELEGRAM_CHAT_ID,\n    notion_api_key:     cfg.NOTION_API_KEY,\n    notion_database_id: cfg.NOTION_DATABASE_ID,\n    max_videos:         cfg.MAX_VIDEOS || 10,\n    min_score:          cfg.MIN_SCORE || 7,\n    claude_model:       cfg.CLAUDE_MODEL,\n    published_days_ago: cfg.PUBLISHED_DAYS_AGO || 60\n  } }; });\n"
+      }
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440004",
+      "name": "YouTube Search API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        920,
+        300
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://www.googleapis.com/youtube/v3/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "part",
+              "value": "snippet"
+            },
+            {
+              "name": "channelId",
+              "value": "={{ $json.channel_id }}"
+            },
+            {
+              "name": "type",
+              "value": "video"
+            },
+            {
+              "name": "maxResults",
+              "value": "={{ $json.max_videos }}"
+            },
+            {
+              "name": "order",
+              "value": "date"
+            },
+            {
+              "name": "publishedAfter",
+              "value": "={{ new Date(Date.now() - $json.published_days_ago * 86400000).toISOString() }}"
+            },
+            {
+              "name": "key",
+              "value": "={{ $json.youtube_api_key }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440005",
+      "name": "Извлечь видео",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1160,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const cfg = $('API Keys and Config').first().json;\nconst seen = new Set();\nconst videos = [];\n\nfor (const item of $input.all()) {\n  const data = item.json;\n  if (!Array.isArray(data.items)) continue;\n  for (const video of data.items) {\n    const id = video.id && video.id.videoId;\n    if (!id || seen.has(id)) continue;\n    seen.add(id);\n    videos.push({ json: {\n      videoId:            id,\n      title:              video.snippet.title,\n      channel:            video.snippet.channelTitle,\n      description:        video.snippet.description,\n      publishedAt:        video.snippet.publishedAt,\n      videoUrl:           'https://www.youtube.com/watch?v=' + id,\n      openai_api_key:     cfg.OPENAI_API_KEY,\n      transcript_lang:    cfg.TRANSCRIPT_LANG || 'ru',\n      telegram_chat_id:   cfg.TELEGRAM_CHAT_ID,\n      notion_api_key:     cfg.NOTION_API_KEY,\n      notion_database_id: cfg.NOTION_DATABASE_ID,\n      min_score:          cfg.MIN_SCORE,\n      claude_model:       cfg.CLAUDE_MODEL\n    } });\n  }\n}\n\nif (videos.length === 0) throw new Error('YouTube: видео не найдены. Проверь API Key и квоту.');\nreturn videos;\n"
+      }
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440006",
+      "name": "Запросить обработанные видео",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1160,
+        500
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.notion.com/v1/databases/{{ $('API Keys and Config').first().json.NOTION_DATABASE_ID }}/query",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $('API Keys and Config').first().json.NOTION_API_KEY }}"
+            },
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={ \"page_size\": 100 }",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "notes": "Запрашиваем все уже сохранённые Video ID из Notion для дедупликации"
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440007",
+      "name": "Отфильтровать дубли и сортировать",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const cfg = $('API Keys and Config').first().json;\n\n// Читаем уже обработанные Video ID из Notion\nconst notionResponse = $('Запросить обработанные видео').first().json;\nconst notionResults = notionResponse.results || [];\n\nconst processedIds = new Set(\n  notionResults.map(page => {\n    try { return page.properties['Video ID'].rich_text[0].plain_text; }\n    catch (e) { return null; }\n  }).filter(id => id !== null && id !== '')\n);\n\n// Все входящие видео (из ноды «Извлечь видео», $input здесь — ответ Notion)\nconst allItems = $('Извлечь видео').all();\n\n// Оставляем только новые\nconst newItems = allItems.filter(item => {\n  const videoId = item.json.videoId;\n  if (!videoId) return false;\n  return !processedIds.has(videoId);\n});\n\nif (newItems.length === 0) {\n  throw new Error(`Новых видео нет. Все ${allItems.length} видео уже обработаны и сохранены в Notion.`);\n}\n\n// Сортируем от старых к новым (чтобы обрабатывать в хронологическом порядке)\nnewItems.sort((a, b) => {\n  return new Date(a.json.publishedAt || 0) - new Date(b.json.publishedAt || 0);\n});\n\nreturn newItems.map(item => ({\n  json: { ...item.json, NOTION_API_KEY: cfg.NOTION_API_KEY, NOTION_DATABASE_ID: cfg.NOTION_DATABASE_ID }\n}));\n"
+      },
+      "notes": "Исключает уже обработанные видео, сортирует от старых к новым"
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440008",
+      "name": "Получить транскрипт",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1640,
+        300
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://www.youtube.com/api/timedtext",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "v",
+              "value": "={{ $json.videoId }}"
+            },
+            {
+              "name": "lang",
+              "value": "={{ $json.transcript_lang || 'ru' }}"
+            },
+            {
+              "name": "fmt",
+              "value": "json3"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "notes": "YouTube бесплатный timedtext API — без лимитов. Возвращает JSON3 с субтитрами."
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440009",
+      "name": "Подготовить контент",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1880,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const resp = $json;\nconst meta = $('Отфильтровать дубли и сортировать').item.json;\n\nlet text = '';\n\n// YouTube timedtext json3 format: { events: [ { segs: [ { utf8: '...' } ] } ] }\nif (resp && resp.events && Array.isArray(resp.events)) {\n  text = resp.events\n    .filter(e => e.segs)\n    .map(e => e.segs.map(s => (s.utf8 || '').replace(/\\n/g, ' ')).join(''))\n    .join(' ')\n    .replace(/\\s+/g, ' ')\n    .trim();\n}\n\nif (text.trim().length < 100) {\n  // Fallback to description when no subtitles found\n  text = meta.description || '';\n  if (text.length < 50) return [{ json: { skip: true, reason: 'no_transcript', ...meta } }];\n}\n\nif (text.length > 12000) text = text.substring(0, 12000) + '...';\n\nreturn [{ json: { ...meta, transcript: text, skip: false } }];\n"
+      }
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440010",
+      "name": "Есть контент",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2120,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-01",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440011",
+      "name": "Подготовить запрос к Claude",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2360,
+        180
+      ],
+      "parameters": {
+        "jsCode": "const d = $json;\nconst cfg = $('API Keys and Config').first().json;\nconst openai_api_key = cfg.OPENAI_API_KEY; // used as anthropic key\nconst model = d.claude_model || 'claude-haiku-4-5-20251001';\nconst min_score = d.min_score || 7;\n\nconst systemPrompt = `You are an expert business analyst. Extract maximum actionable value from YouTube transcripts for entrepreneurs. Be EXTREMELY specific: include real numbers, exact quotes, step-by-step implementation, specific tool names. Respond ONLY with valid JSON. No markdown, no prose outside JSON. IMPORTANT: ALL text values in the JSON (summary, idea titles, descriptions, impact, implementation steps, key_quotes, metrics, expected_roi, time_to_implement, category names) MUST be written in RUSSIAN language.`;\n\nconst userPrompt = `Analyze this YouTube video transcript and extract structured business insights.\n\nVIDEO: ${d.title || ''}\nCHANNEL: ${d.channel || ''}\nDESCRIPTION: ${(d.description || '').slice(0, 500)}\n\nTRANSCRIPT:\n${(d.transcript || '').slice(0, 12000)}\n\nReturn JSON with this exact schema (ALL text values in RUSSIAN):\n{\n  \"relevance_score\": <1-10>,\n  \"summary\": \"<краткое резюме на русском, 3-4 предложения>\",\n  \"key_quotes\": [\"<цитата из транскрипта>\", \"<цитата>\", \"<цитата>\"],\n  \"metrics\": [\"<конкретное число с контекстом>\", \"<ещё метрика>\"],\n  \"ideas\": [\n    {\n      \"title\": \"<короткое название на русском, макс 8 слов>\",\n      \"description\": \"<4-5 предложений на русском: что, почему, какую проблему решает, результат>\",\n      \"category\": \"<одно из на русском: Рост|Монетизация|Автоматизация|Продукт|Маркетинг|Операции|Контент|Аналитика|AI-инструменты>\",\n      \"impact\": \"<конкретный эффект с цифрами если есть, на русском>\",\n      \"implementation\": [\"Шаг 1: <действие>\", \"Шаг 2: ...\", \"Шаг 3: ...\", \"Шаг 4: ...\", \"Шаг 5: ...\"],\n      \"tools\": [\"<название инструмента>\", \"<ещё инструмент>\"],\n      \"difficulty\": \"<низкая|средняя|высокая>\",\n      \"time_to_implement\": \"<реалистичная оценка, на русском>\",\n      \"expected_roi\": \"<ожидаемый результат, на русском>\",\n      \"score\": <1-10>\n    }\n  ]\n}\n\nExtract 3-7 ideas. Score ${min_score}+ ideas must be highly actionable with clear ROI. All text in Russian.`;\n\nconst body = JSON.stringify({\n  model,\n  max_tokens: 4096,\n  temperature: 0.3,\n  messages: [\n    { role: 'system', content: systemPrompt },\n    { role: 'user',   content: userPrompt }\n  ]\n});\n\nreturn [{ json: { ...d, claude_body: body, openai_api_key } }];\n"
+      }
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440012",
+      "name": "Анализ Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2600,
+        180
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $json.openai_api_key }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.claude_body }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440013",
+      "name": "Парсить и фильтровать идеи",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2840,
+        180
+      ],
+      "parameters": {
+        "jsCode": "const claudeRaw = $json.content?.[0]?.text ?? $json.choices?.[0]?.message?.content;\nif (!claudeRaw) throw new Error('No content in AI response: ' + JSON.stringify($json).slice(0, 300));\n\nconst meta = $('Подготовить запрос к Claude').item.json;\nconst min_score = meta.min_score || 7;\n\nlet raw = claudeRaw.trim().replace(/^```(?:json)?\\s*/i, '').replace(/\\s*```$/, '').trim();\nlet analysis;\ntry {\n  analysis = JSON.parse(raw);\n} catch(e) {\n  const match = raw.match(/\\{[\\s\\S]*\\}/);\n  if (match) { try { analysis = JSON.parse(match[0]); } catch(e2) { throw new Error('Failed to parse AI JSON: ' + raw.slice(0, 300)); } }\n  else throw new Error('No JSON in AI response: ' + raw.slice(0, 300));\n}\n\nconst ideas = (analysis.ideas || [])\n  .filter(i => Number(i.score) >= min_score)\n  .sort((a, b) => Number(b.score) - Number(a.score))\n  .map(idea => ({\n    title:             String(idea.title || ''),\n    description:       String(idea.description || ''),\n    category:          String(idea.category || ''),\n    impact:            String(idea.impact || ''),\n    implementation:    Array.isArray(idea.implementation) ? idea.implementation.map(String) : [],\n    tools:             Array.isArray(idea.tools) ? idea.tools.map(String) : [],\n    difficulty:        String(idea.difficulty || '\\u0441\\u0440\\u0435\\u0434\\u043d\\u044f\\u044f'),\n    time_to_implement: String(idea.time_to_implement || ''),\n    expected_roi:      String(idea.expected_roi || ''),\n    score:             Number(idea.score) || 0\n  }));\n\nif (ideas.length === 0) {\n  return [{ json: { skip: true, reason: 'no_good_ideas', relevance: analysis.relevance_score, ...meta } }];\n}\n\nif ((analysis.relevance_score || 0) < min_score) {\n  return [{ json: { skip: true, reason: 'low_relevance', score: analysis.relevance_score, ...meta } }];\n}\n\nreturn [{ json: {\n  skip:               false,\n  videoId:            meta.videoId || '',\n  videoUrl:           meta.videoUrl || '',\n  title:              meta.title || '',\n  channel:            meta.channel || '',\n  publishedAt:        meta.publishedAt || '',\n  telegram_chat_id:   meta.telegram_chat_id || '',\n  NOTION_API_KEY:     meta.NOTION_API_KEY || '',\n  NOTION_DATABASE_ID: meta.NOTION_DATABASE_ID || '',\n  relevance_score:    Number(analysis.relevance_score) || 0,\n  summary:            String(analysis.summary || ''),\n  key_quotes:         Array.isArray(analysis.key_quotes) ? analysis.key_quotes : [],\n  metrics:            Array.isArray(analysis.metrics) ? analysis.metrics : [],\n  ideas,\n  ideas_count:        ideas.length\n} }];\n"
+      }
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440014",
+      "name": "Есть ценные идеи",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        3080,
+        180
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-02",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440015",
+      "name": "Сохранить в Notion",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3320,
+        60
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.notion.com/v1/pages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $('API Keys and Config').first().json.NOTION_API_KEY }}"
+            },
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ (() => {\n  function tr(s, n) { var t = String(s || ''); return t.length <= n ? t : t.slice(0, n - 1) + '\\u2026'; }\n\n  function p(text) {\n    return { object:'block', type:'paragraph', paragraph:{ rich_text:[{ type:'text', text:{ content: tr(text, 2000) } }] } };\n  }\n  function h2(text) {\n    return { object:'block', type:'heading_2', heading_2:{ rich_text:[{ type:'text', text:{ content: tr(text, 2000) } }] } };\n  }\n  function h3(text) {\n    return { object:'block', type:'heading_3', heading_3:{ rich_text:[{ type:'text', text:{ content: tr(text, 2000) } }] } };\n  }\n  function bullet(text) {\n    return { object:'block', type:'bulleted_list_item', bulleted_list_item:{ rich_text:[{ type:'text', text:{ content: tr(text, 2000) } }] } };\n  }\n  function numbered(text) {\n    return { object:'block', type:'numbered_list_item', numbered_list_item:{ rich_text:[{ type:'text', text:{ content: tr(text, 2000) } }] } };\n  }\n  function quote(text) {\n    return { object:'block', type:'quote', quote:{ rich_text:[{ type:'text', text:{ content: tr(text, 2000) } }] } };\n  }\n  function divider() {\n    return { object:'block', type:'divider', divider:{} };\n  }\n\n  var cfg    = $('API Keys and Config').first().json;\n  var ideas  = Array.isArray($json.ideas)      ? $json.ideas      : [];\n  var quotes = Array.isArray($json.key_quotes) ? $json.key_quotes : [];\n  var metrics= Array.isArray($json.metrics)    ? $json.metrics    : [];\n\n  var notionDate;\n  try { notionDate = new Date($json.publishedAt).toISOString().split('T')[0]; }\n  catch(e) { notionDate = new Date().toISOString().split('T')[0]; }\n\n  var children = [];\n\n  // О чём видео\n  if ($json.summary) {\n    children.push(h2('\\uD83D\\uDCDD \\u041E \\u0447\\u0451\\u043c \\u0432\\u0438\\u0434\\u0435\\u043e'));\n    children.push(p($json.summary));\n  }\n\n  // Ключевые цитаты\n  if (quotes.length > 0) {\n    children.push(divider());\n    children.push(h2('\\uD83D\\uDDE3 \\u041A\\u043B\\u044E\\u0447\\u0435\\u0432\\u044B\\u0435 \\u0446\\u0438\\u0442\\u0430\\u0442\\u044B'));\n    quotes.forEach(function(q) { children.push(quote(q)); });\n  }\n\n  // Ключевые цифры\n  if (metrics.length > 0) {\n    children.push(divider());\n    children.push(h2('\\uD83D\\uDCCA \\u0426\\u0438\\u0444\\u0440\\u044B \\u0438 \\u0444\\u0430\\u043A\\u0442\\u044B'));\n    metrics.forEach(function(m) { children.push(bullet(m)); });\n  }\n\n  // Идеи\n  if (ideas.length > 0) {\n    children.push(divider());\n    children.push(h2('\\uD83D\\uDCA1 \\u0418\\u0434\\u0435\\u0438 \\u0438 \\u0438\\u043D\\u0441\\u0430\\u0439\\u0442\\u044B'));\n\n    ideas.forEach(function(idea, i) {\n      var score = idea.score ? ' \\u2B50' + idea.score + '/10' : '';\n      var cat   = idea.category ? ' [' + idea.category + ']' : '';\n      children.push(h3((i + 1) + '. ' + idea.title + cat + score));\n\n      if (idea.description) { children.push(p(idea.description)); }\n\n      if (idea.impact)            { children.push(bullet('\\uD83C\\uDFAF \\u042D\\u0444\\u0444\\u0435\\u043A\\u0442: '       + idea.impact)); }\n      if (idea.expected_roi)      { children.push(bullet('\\uD83D\\uDCB0 ROI: '                                              + idea.expected_roi)); }\n      if (idea.time_to_implement) { children.push(bullet('\\u23F1 \\u0421\\u0440\\u043E\\u043A: '                           + idea.time_to_implement)); }\n      if (idea.difficulty)        { children.push(bullet('\\uD83D\\uDD27 \\u0421\\u043B\\u043E\\u0436\\u043D\\u043E\\u0441\\u0442\\u044C: ' + idea.difficulty)); }\n\n      if (Array.isArray(idea.implementation) && idea.implementation.length > 0) {\n        children.push(p('\\uD83D\\uDCCB \\u041A\\u0430\\u043A \\u0440\\u0435\\u0430\\u043B\\u0438\\u0437\\u043E\\u0432\\u0430\\u0442\\u044C:'));\n        idea.implementation.forEach(function(step) { children.push(numbered(step)); });\n      }\n\n      if (Array.isArray(idea.tools) && idea.tools.length > 0) {\n        children.push(bullet('\\uD83D\\uDEE0 \\u0418\\u043D\\u0441\\u0442\\u0440\\u0443\\u043C\\u0435\\u043D\\u0442\\u044B: ' + idea.tools.join(', ')));\n      }\n    });\n  }\n\n  // Ссылка на видео\n  if ($json.videoUrl) {\n    children.push(divider());\n    children.push(p('\\uD83D\\uDD17 ' + $json.videoUrl));\n  }\n\n  var body = {\n    parent: { database_id: cfg.NOTION_DATABASE_ID },\n    properties: {\n      'Name':        { title:     [{ text: { content: tr($json.title, 200) } }] },\n      'Date':        { date:      { start: notionDate } },\n      'Status':      { status:    { name: 'In progress' } },\n      'Video ID':    { rich_text: [{ text: { content: tr($json.videoId, 200) } }] },\n      'Channel':     { rich_text: [{ text: { content: tr($json.channel, 200) } }] },\n      'Ideas_count': { number: Number($json.ideas_count) || 0 }\n    },\n    children: children.slice(0, 95)\n  };\n\n  return JSON.stringify(body);\n})() }}",
+        "options": {}
+      },
+      "notes": "Сохраняет каждое видео отдельной страницей. Video ID используется для дедупликации. Тело страницы — структурированные блоки на русском (как дайджест)."
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440017",
+      "name": "Форматировать дайджест",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3560,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const allItems = $input.all();\nif (allItems.length === 0) throw new Error('No items received by digest formatter.');\n\nconst chat_id = allItems[0].json.telegram_chat_id || allItems[0].json.chat_id || '';\n\nfunction esc(str) {\n  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');\n}\n\nfunction formatDate(iso) {\n  if (!iso) return '';\n  try {\n    return new Date(iso).toLocaleDateString('ru-RU', { day:'numeric', month:'long', year:'numeric' });\n  } catch(e) { return iso; }\n}\n\nfunction splitChunks(text, maxLen) {\n  const chunks = [];\n  let remaining = text;\n  while (remaining.length > maxLen) {\n    let splitAt = remaining.lastIndexOf('\\n\\n', maxLen);\n    if (splitAt < maxLen * 0.5) splitAt = remaining.lastIndexOf('\\n', maxLen);\n    if (splitAt < maxLen * 0.5) splitAt = maxLen;\n    chunks.push(remaining.slice(0, splitAt).trim());\n    remaining = remaining.slice(splitAt).trim();\n  }\n  if (remaining.length > 0) chunks.push(remaining);\n  return chunks;\n}\n\nconst totalVideos = allItems.length;\nconst totalIdeas  = allItems.reduce((acc, i) => acc + (i.json.ideas || []).length, 0);\n\n// ── Шапка ────────────────────────────────────────────────────────────────────\nlet digest = '<b>YouTube Ideas Digest</b>\\n';\ndigest += '\\uD83D\\uDCC5 ' + formatDate(new Date().toISOString()) + '\\n';\ndigest += '\\uD83C\\uDFA5 ' + totalVideos + ' \\u0432\\u0438\\u0434\\u0435\\u043e';\ndigest += '   \\uD83D\\uDCA1 ' + totalIdeas + ' \\u0438\\u0434\\u0435\\u0439\\n';\n\n// ── Секция по каждому видео ───────────────────────────────────────────────────\nallItems.forEach((item, idx) => {\n  const v = item.json;\n  const ideas = Array.isArray(v.ideas) ? v.ideas : [];\n  const score = v.relevance_score || 0;\n\n  digest += '\\n\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\n';\n\n  // Заголовок\n  const titleStr = v.videoUrl\n    ? '<a href=\"' + esc(v.videoUrl) + '\">' + esc(v.title) + '</a>'\n    : '<b>' + esc(v.title) + '</b>';\n  digest += '\\uD83C\\uDFA5 ' + titleStr + '\\n';\n  digest += '\\uD83D\\uDCFA ' + esc(v.channel);\n  if (v.publishedAt) digest += '   \\uD83D\\uDCC5 ' + formatDate(v.publishedAt);\n  digest += '   \\u2B50 ' + score + '/10\\n';\n\n  // О чём видео\n  if (v.summary) {\n    digest += '\\n\\uD83D\\uDCDD <b>\\u041e \\u0447\\u0451\\u043c \\u0432\\u0438\\u0434\\u0435\\u043e:</b>\\n';\n    digest += esc(v.summary) + '\\n';\n  }\n\n  // Основные мысли — тезисно (заголовки идей)\n  if (ideas.length > 0) {\n    digest += '\\n\\uD83D\\uDCA1 <b>\\u041e\\u0441\\u043d\\u043e\\u0432\\u043d\\u044b\\u0435 \\u043c\\u044b\\u0441\\u043b\\u0438:</b>\\n';\n    ideas.forEach(idea => {\n      digest += '\\u2022 <b>' + esc(idea.title) + '</b>\\n';\n      if (idea.description) {\n        digest += '   ' + esc(idea.description) + '\\n';\n      }\n    });\n  }\n\n  // Как реализовать — шаги из всех идей объединяем\n  const allSteps = [];\n  ideas.forEach(idea => {\n    if (Array.isArray(idea.implementation)) {\n      idea.implementation.forEach(step => allSteps.push(step));\n    }\n  });\n  if (allSteps.length > 0) {\n    digest += '\\n\\uD83D\\uDEE0 <b>\\u041A\\u0430\\u043A \\u0440\\u0435\\u0430\\u043B\\u0438\\u0437\\u043E\\u0432\\u0430\\u0442\\u044C:</b>\\n';\n    // Показываем до 7 шагов чтобы не перегружать\n    allSteps.slice(0, 7).forEach(step => {\n      digest += '\\u2022 ' + esc(step) + '\\n';\n    });\n  }\n\n  // Инструменты\n  const allTools = [];\n  ideas.forEach(idea => {\n    if (Array.isArray(idea.tools)) {\n      idea.tools.forEach(t => { if (!allTools.includes(t)) allTools.push(t); });\n    }\n  });\n  if (allTools.length > 0) {\n    digest += '\\n\\uD83D\\uDD27 <b>\\u0418\\u043D\\u0441\\u0442\\u0440\\u0443\\u043C\\u0435\\u043D\\u0442\\u044B:</b> ' + esc(allTools.join(', ')) + '\\n';\n  }\n});\n\n// ── Источники ────────────────────────────────────────────────────────────────\ndigest += '\\n\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\n';\ndigest += '\\uD83D\\uDCCC <b>\\u0418\\u0441\\u0442\\u043E\\u0447\\u043D\\u0438\\u043A\\u0438:</b>\\n';\nallItems.forEach((item, i) => {\n  const v = item.json;\n  const link = v.videoUrl\n    ? '<a href=\"' + esc(v.videoUrl) + '\">' + esc(v.title) + '</a>'\n    : esc(v.title);\n  digest += (i + 1) + '. ' + link + ' \\u2014 ' + esc(v.channel) + '\\n';\n});\n\n// ── Разбить на куски ≤4000 символов ─────────────────────────────────────────\nconst chunks = splitChunks(digest, 4000);\nreturn chunks.map((chunk, i) => ({\n  json: {\n    chat_id,\n    message: chunk,\n    text:    chunk,\n    parse_mode: 'HTML',\n    disable_web_page_preview: true,\n    chunk_index:  i + 1,\n    total_chunks: chunks.length\n  }\n}));\n"
+      }
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440018",
+      "name": "Отправить в Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3800,
+        180
+      ],
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.message }}",
+        "additionalFields": {
+          "parse_mode": "HTML",
+          "disable_web_page_preview": true
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Запуск по расписанию": {
+      "main": [
+        [
+          {
+            "node": "API Keys and Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "API Keys and Config": {
+      "main": [
+        [
+          {
+            "node": "Настроить канал",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Настроить канал": {
+      "main": [
+        [
+          {
+            "node": "YouTube Search API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "YouTube Search API": {
+      "main": [
+        [
+          {
+            "node": "Извлечь видео",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Извлечь видео": {
+      "main": [
+        [
+          {
+            "node": "Запросить обработанные видео",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Запросить обработанные видео": {
+      "main": [
+        [
+          {
+            "node": "Отфильтровать дубли и сортировать",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Отфильтровать дубли и сортировать": {
+      "main": [
+        [
+          {
+            "node": "Получить транскрипт",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Получить транскрипт": {
+      "main": [
+        [
+          {
+            "node": "Подготовить контент",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Подготовить контент": {
+      "main": [
+        [
+          {
+            "node": "Есть контент",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Есть контент": {
+      "main": [
+        [
+          {
+            "node": "Подготовить запрос к Claude",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Подготовить запрос к Claude": {
+      "main": [
+        [
+          {
+            "node": "Анализ OpenAI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Анализ OpenAI": {
+      "main": [
+        [
+          {
+            "node": "Парсить и фильтровать идеи",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Парсить и фильтровать идеи": {
+      "main": [
+        [
+          {
+            "node": "Есть ценные идеи",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Есть ценные идеи": {
+      "main": [
+        [
+          {
+            "node": "Сохранить в Notion",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Форматировать дайджест",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Форматировать дайджест": {
+      "main": [
+        [
+          {
+            "node": "Отправить в Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
