@@ -1,0 +1,330 @@
+{
+  "name": "Error Engine — авто-диагностика и восстановление n8n",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [],
+  "id": "error-engine",
+  "versionId": "1",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "node-error-trigger",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cfg-01",
+              "name": "ANTHROPIC_API_KEY",
+              "value": "YOUR_ANTHROPIC_API_KEY",
+              "type": "string"
+            },
+            {
+              "id": "cfg-02",
+              "name": "CLAUDE_MODEL",
+              "value": "claude-haiku-4-5-20251001",
+              "type": "string"
+            },
+            {
+              "id": "cfg-03",
+              "name": "TELEGRAM_CHAT_ID",
+              "value": "YOUR_TELEGRAM_CHAT_ID",
+              "type": "string"
+            },
+            {
+              "id": "cfg-04",
+              "name": "NOTION_API_KEY",
+              "value": "YOUR_NOTION_API_KEY",
+              "type": "string"
+            },
+            {
+              "id": "cfg-05",
+              "name": "NOTION_ERROR_LOG_DB_ID",
+              "value": "YOUR_ERROR_LOG_DB_ID",
+              "type": "string"
+            },
+            {
+              "id": "cfg-06",
+              "name": "AUTO_RESTART",
+              "value": "false",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-config",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Code node \"Build Claude Request\"\n// Вход: payload от Error Trigger. Выход: контекст ошибки + тело запроса к Claude.\nconst cfg = $('Config').first().json;\nconst e = $json || {};\n\nconst wf = e.workflow || {};\nconst ex = e.execution || {};\nlet err = ex.error || {};\nif (typeof err === 'string') err = { message: err };\n\nconst ctx = {\n  workflow_name: wf.name || 'unknown',\n  workflow_id: String(wf.id || ''),\n  failed_node: ex.lastNodeExecuted || 'unknown',\n  error_name: err.name || '',\n  error_message: err.message || JSON.stringify(err).slice(0, 500),\n  error_stack: String(err.stack || '').slice(0, 1500),\n  execution_url: ex.url || '',\n  mode: ex.mode || ''\n};\n\nconst prompt =\n  'Ты — SRE-инженер, диагностирующий сбой n8n workflow. ' +\n  'Верни СТРОГО валидный JSON без markdown и без пояснений, по схеме:\\n' +\n  '{\\n' +\n  '  \"problem_type\": \"transient|config|logic|auth|data|external_api\",\\n' +\n  '  \"root_cause\": \"1-2 предложения на русском\",\\n' +\n  '  \"fix_summary\": \"что сделать, 1-2 предложения\",\\n' +\n  '  \"fix_steps\": [\"шаг 1\", \"шаг 2\"],\\n' +\n  '  \"can_auto_retry\": true,\\n' +\n  '  \"severity\": \"low|medium|high|critical\",\\n' +\n  '  \"confidence\": 0.0\\n' +\n  '}\\n' +\n  'can_auto_retry=true только если ошибка временная (rate limit, timeout, 5xx, сеть). ' +\n  'Для logic/config/auth/data ставь false.\\n\\n' +\n  'Данные об ошибке:\\n' + JSON.stringify(ctx, null, 2);\n\nconst claude_body = JSON.stringify({\n  model: cfg.CLAUDE_MODEL,\n  max_tokens: 1024,\n  messages: [{ role: 'user', content: prompt }]\n});\n\nreturn [{ json: Object.assign({}, ctx, {\n  anthropic_api_key: cfg.ANTHROPIC_API_KEY,\n  claude_body: claude_body\n}) }];\n"
+      },
+      "id": "node-build-request",
+      "name": "Build Claude Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $json.anthropic_api_key }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.claude_body }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "node-claude",
+      "name": "Claude Diagnose",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Code node \"Parse Diagnosis\"\n// Вход: ответ Claude. Выход: сообщение Telegram + тело для Notion + флаги авто-ретрая.\nconst cfg = $('Config').first().json;\nconst ctx = $('Build Claude Request').first().json;\nconst resp = $json || {};\n\nfunction esc(s) {\n  return String(s || '')\n    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\n}\n\nlet diag;\ntry {\n  const raw = (resp.content && resp.content[0] && resp.content[0].text) || '{}';\n  const clean = raw.replace(/```json/gi, '').replace(/```/g, '').trim();\n  diag = JSON.parse(clean);\n} catch (err) {\n  diag = {\n    problem_type: 'unknown',\n    root_cause: 'Не удалось распарсить ответ Claude — проверь вручную.',\n    fix_summary: 'Открой выполнение в n8n и разбери ошибку руками.',\n    fix_steps: [],\n    can_auto_retry: false,\n    severity: 'high',\n    confidence: 0\n  };\n}\n\nconst now = new Date().toISOString();\nconst sev = String(diag.severity || 'medium').toLowerCase();\nconst emoji = sev === 'critical' ? '🚨' : sev === 'high' ? '🔴' : sev === 'medium' ? '🟡' : '🟢';\nconst steps = Array.isArray(diag.fix_steps) ? diag.fix_steps : [];\n\nlet msg = '';\nmsg += emoji + ' <b>Сбой n8n workflow</b>\\n';\nmsg += '<b>Workflow:</b> ' + esc(ctx.workflow_name) + '\\n';\nmsg += '<b>Нода:</b> ' + esc(ctx.failed_node) + '\\n';\nmsg += '<b>Ошибка:</b> ' + esc(ctx.error_message) + '\\n\\n';\nmsg += '<b>Диагноз</b> (' + esc(diag.problem_type) + ', conf ' + esc(diag.confidence) + '):\\n';\nmsg += esc(diag.root_cause) + '\\n\\n';\nmsg += '<b>Что сделать:</b> ' + esc(diag.fix_summary) + '\\n';\nif (steps.length) msg += steps.map(function (s, i) { return (i + 1) + '. ' + esc(s); }).join('\\n') + '\\n';\nif (ctx.execution_url) msg += '\\n<a href=\"' + ctx.execution_url + '\">Открыть выполнение</a>';\n\nconst notion_body = JSON.stringify({\n  parent: { database_id: cfg.NOTION_ERROR_LOG_DB_ID },\n  properties: {\n    'Name':       { title:     [{ text: { content: (ctx.workflow_name + ' — ' + ctx.error_message).slice(0, 200) } }] },\n    'Workflow':   { rich_text: [{ text: { content: String(ctx.workflow_name).slice(0, 200) } }] },\n    'Node':       { rich_text: [{ text: { content: String(ctx.failed_node).slice(0, 200) } }] },\n    'Error':      { rich_text: [{ text: { content: String(ctx.error_message).slice(0, 1900) } }] },\n    'Type':       { select:    { name: String(diag.problem_type || 'unknown').slice(0, 50) } },\n    'Severity':   { select:    { name: sev } },\n    'Auto retry': { checkbox:  !!diag.can_auto_retry },\n    'When':       { date:      { start: now } }\n  }\n});\n\nconst autoRestart = String(cfg.AUTO_RESTART).toLowerCase() === 'true';\n\nreturn [{ json: {\n  chat_id: cfg.TELEGRAM_CHAT_ID,\n  message: msg,\n  notion_body: notion_body,\n  can_auto_retry: !!diag.can_auto_retry,\n  do_retry: (!!diag.can_auto_retry) && autoRestart,\n  workflow_id: ctx.workflow_id,\n  severity: sev\n} }];\n"
+      },
+      "id": "node-parse",
+      "name": "Parse Diagnosis",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.notion.com/v1/pages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $('Config').first().json.NOTION_API_KEY }}"
+            },
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.notion_body }}",
+        "options": {}
+      },
+      "id": "node-notion",
+      "name": "Notion Error Log",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.message }}",
+        "additionalFields": {
+          "parse_mode": "HTML",
+          "disable_web_page_preview": true
+        }
+      },
+      "id": "node-telegram",
+      "name": "Telegram Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1120,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "retry-cond",
+              "leftValue": "={{ $json.do_retry }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "node-if-retry",
+      "name": "Авто-ретрай?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1340,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "={{ $json.workflow_id }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "node-rerun",
+      "name": "Перезапустить workflow",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        1560,
+        380
+      ]
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Build Claude Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Claude Request": {
+      "main": [
+        [
+          {
+            "node": "Claude Diagnose",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Diagnose": {
+      "main": [
+        [
+          {
+            "node": "Parse Diagnosis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Diagnosis": {
+      "main": [
+        [
+          {
+            "node": "Notion Error Log",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Telegram Alert",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Авто-ретрай?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Авто-ретрай?": {
+      "main": [
+        [
+          {
+            "node": "Перезапустить workflow",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  }
+}
