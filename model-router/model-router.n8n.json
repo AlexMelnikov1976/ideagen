@@ -1,0 +1,188 @@
+{
+  "name": "Model Router — умный выбор LLM (GLM/Claude)",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [],
+  "id": "model-router",
+  "versionId": "1",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "node-trigger",
+      "name": "When Called",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c1",
+              "name": "ANTHROPIC_API_KEY",
+              "value": "YOUR_ANTHROPIC_API_KEY",
+              "type": "string"
+            },
+            {
+              "id": "c2",
+              "name": "ZAI_API_KEY",
+              "value": "YOUR_ZAI_API_KEY",
+              "type": "string"
+            },
+            {
+              "id": "c3",
+              "name": "ZAI_BASE_URL",
+              "value": "https://api.z.ai/api/paas/v4",
+              "type": "string"
+            },
+            {
+              "id": "c4",
+              "name": "HAIKU_MODEL",
+              "value": "claude-haiku-4-5-20251001",
+              "type": "string"
+            },
+            {
+              "id": "c5",
+              "name": "GLM_MODEL",
+              "value": "glm-5.2",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-config",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Code node \"Model Router\"\n// Вход (от Execute Workflow Trigger): { task_type, prompt, system?, max_tokens? }\n// Выход: провайдер, url, заголовки и готовое тело запроса — их подхватывает generic HTTP-нода.\nconst cfg = $('Config').first().json;\nconst inp = $json || {};\n\nconst taskType = String(inp.task_type || 'analyze').toLowerCase();\nconst prompt = String(inp.prompt || '');\nconst system = String(inp.system || '');\nconst maxTokens = Number(inp.max_tokens) || 1024;\n\n// Дешёвые механические задачи → Claude Haiku. Всё «умное» → GLM (дешевле в 3-5x).\nconst CHEAP = ['extract', 'dedupe', 'classify', 'parse', 'filter', 'format', 'translate'];\nconst useGlm = !CHEAP.includes(taskType);\n\nlet provider, url, model, body;\nlet h_x_api_key = '';\nlet h_authorization = '';\n\nif (useGlm) {\n  provider = 'zai';\n  url = String(cfg.ZAI_BASE_URL).replace(/\\/+$/, '') + '/chat/completions';\n  model = cfg.GLM_MODEL;\n  h_authorization = 'Bearer ' + cfg.ZAI_API_KEY;\n  const messages = [];\n  if (system) messages.push({ role: 'system', content: system });\n  messages.push({ role: 'user', content: prompt });\n  body = JSON.stringify({ model: model, max_tokens: maxTokens, temperature: 0.7, messages: messages });\n} else {\n  provider = 'anthropic';\n  url = 'https://api.anthropic.com/v1/messages';\n  model = cfg.HAIKU_MODEL;\n  h_x_api_key = cfg.ANTHROPIC_API_KEY;\n  const payload = { model: model, max_tokens: maxTokens, messages: [{ role: 'user', content: prompt }] };\n  if (system) payload.system = system;\n  body = JSON.stringify(payload);\n}\n\nreturn [{ json: {\n  provider: provider,\n  url: url,\n  model: model,\n  body: body,\n  h_x_api_key: h_x_api_key,\n  h_authorization: h_authorization,\n  task_type: taskType\n} }];\n"
+      },
+      "id": "node-router",
+      "name": "Model Router",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $json.h_x_api_key }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $json.h_authorization }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.body }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "node-llm",
+      "name": "LLM Call",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Code node \"Normalize Response\"\n// Приводит ответ разных провайдеров к единому виду { text, provider, model }.\n// Anthropic: content[0].text | OpenAI/Z.ai: choices[0].message.content\nconst meta = $('Model Router').first().json;\nconst r = $json || {};\n\nlet text = '';\nif (meta.provider === 'anthropic') {\n  text = (r.content && r.content[0] && r.content[0].text) || '';\n} else {\n  text = (r.choices && r.choices[0] && r.choices[0].message && r.choices[0].message.content) || '';\n}\n\n// Если провайдер вернул ошибку в теле — прокинем её, чтобы вызывающий workflow увидел.\nconst errMsg = (r.error && (r.error.message || r.error)) || (r.message && !text ? r.message : '');\n\nreturn [{ json: {\n  text: text,\n  provider: meta.provider,\n  model: meta.model,\n  task_type: meta.task_type,\n  ok: !!text,\n  error: text ? '' : String(errMsg || 'empty response')\n} }];\n"
+      },
+      "id": "node-normalize",
+      "name": "Normalize Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "When Called": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Model Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Model Router": {
+      "main": [
+        [
+          {
+            "node": "LLM Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM Call": {
+      "main": [
+        [
+          {
+            "node": "Normalize Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
